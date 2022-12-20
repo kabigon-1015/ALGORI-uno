@@ -622,7 +622,7 @@ def on_next_player(data_res):
     # ただし、ホワイトワイルド（bind_2）の効果が発動している間はチャレンジができません。
     if (draw_reason == DrawReason.WILD_DRAW_4):
         # random challenge or not
-        #基本チャレンジしない方針に変更したい
+        #基本チャレンジしない方針に変更したいね
         num_random = random_by_number(2)
         print('${SocketConst.EMIT.CHALLENGE} data_req:', {
             'is_challenge': True if num_random else False,
