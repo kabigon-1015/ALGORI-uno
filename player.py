@@ -274,9 +274,13 @@ def get_card_play_valid(card_play_before, cards, must_call_draw_card):
     card_play_before is card before play of before Player.
     must_call_draw_card have value is true or false. If must_call_draw_card = true, Player only call event draw-card to draw more cards from Desk.
     """
-    cards_valid = []
-    cards_wild = []
     cards_wild4 = []
+    cards_wild = []
+    cards_wild_other = []
+    cards_sabotage = []
+    cards_reverse = []
+    cards_number = []
+
     #強制的にカードを引く場合
     if str(must_call_draw_card) == 'True':
         return {
@@ -290,22 +294,32 @@ def get_card_play_valid(card_play_before, cards, must_call_draw_card):
         card_number = card.get('number')
         if str(card_special) == Special.WILD_DRAW_4:
             cards_wild4.append(card)
-        elif (
-            str(card_special) == Special.WILD or
-            str(card_special) == Special.WILD_SHUFFLE or
-            str(card_special) == Special.WHITE_WILD
-        ):
-            cards_wild.append(card)
-        elif str(card.get('color')) == str(card_play_before.get('color')):
-            cards_valid.append(card)
-        elif (#int(card_number) == 0としているところがわからない
-            (card_special and str(card_special) == str(card_play_before.get('special'))) or
-            ((card_number is not None or (card_number is not None and int(card_number) == 0)) and
-             (card_play_before.get('number') and int(card_number) == int(card_play_before.get('number'))))
-        ):
-            cards_valid.append(card)
 
-    return cards_valid, cards_wild, cards_wild4
+        elif str(card_special) == Special.WILD:
+            cards_wild.append(card)
+
+        elif (str(card_special) == Special.WILD_SHUFFLE or
+            str(card_special) == Special.WHITE_WILD):
+            cards_wild_other.append(card)
+
+        # card_specialが空ではない and (場札と色が同じ or 場札と記号が同じ)
+        # wild系は全て上で引っかかるのでdraw2，skip，reverseだけになるはず
+        elif (card_special is not None and
+               (str(card.get('color')) == str(card_play_before.get('color')) or 
+               card_special and str(card_special) == str(card_play_before.get('special')))):
+            if (str(card_special) == Special.DRAW_2 or
+                str(card_special) == Special.SKIP):
+                cards_sabotage.append(card)
+            elif str(card_special) == Special.REVERSE:
+                cards_reverse.append(card)
+
+        # card_numberが空ではない（？） and (場札と色が同じ or 場札と数字が同じ)
+        elif ((card_number is not None or (card_number is not None and int(card_number) == 0)) and
+             ((card_play_before.get('number') and int(card_number) == int(card_play_before.get('number'))) or
+              (str(card.get('color')) == str(card_play_before.get('color'))))):
+            cards_number.append(card)
+
+    return cards_wild4, cards_wild, cards_wild_other, cards_sabotage, cards_reverse, cards_number
 
 
 def remove_card_of_player(card_play, cards_of_player):
@@ -339,6 +353,24 @@ def remove_card_of_player(card_play, cards_of_player):
                 new_cards_of_player.append(card_validate)
                 continue
     return new_cards_of_player
+
+def execute_play_number(total, play_cards):
+    number = []
+    for i in range(play_cards):
+        number.append(int(play_cards[i].get('number')))
+    max_value = max(number)
+    max_index = number.index(max_value)
+    card_play = play_cards[max_index]
+    data = {
+        'card_play': card_play,
+    }
+        #変更なし
+    if total == 2:
+        # call event say-uno-and-play-card
+        send_say_uno_and_draw_card(data)
+    else:
+        # call event play-card
+        send_play_card(data)
 
 #カードを出す　変更あり
 def execute_play(total, play_cards):
