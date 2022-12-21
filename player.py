@@ -284,9 +284,12 @@ def get_card_play_valid(card_play_before, cards, must_call_draw_card):
     #強制的にカードを引く場合
     if str(must_call_draw_card) == 'True':
         return {
-            'cardsValid': cards_valid,
-            'cardsWild': cards_wild,
             'cardsWild4': cards_wild4,
+            'cardsWild': cards_wild,
+            'cardsWildother': cards_wild_other,
+            'cardsSabotage': cards_sabotage,
+            'cardsReverse': cards_reverse,
+            'cardsNumber': cards_number,
         }
 
     for card in cards:
@@ -672,7 +675,7 @@ def on_next_player(data_res):
         if num_random:
             return
 
-    cards_valid, cards_wild, cards_wild4 = get_card_play_valid(
+    cards_wild4, cards_wild, cards_wild_other, cards_sabotage, cards_reverse, cards_number = get_card_play_valid(
         card_play_before,
         cards,
         data_res.get('must_call_draw_card'),
