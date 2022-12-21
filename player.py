@@ -356,10 +356,11 @@ def remove_card_of_player(card_play, cards_of_player):
                 new_cards_of_player.append(card_validate)
                 continue
     return new_cards_of_player
-
+    
+#数字カードを出す時の処理
 def execute_play_number(total, play_cards):
     number = []
-    for i in range(play_cards):
+    for i in range(len(play_cards)):
         number.append(int(play_cards[i].get('number')))
     max_value = max(number)
     max_index = number.index(max_value)
@@ -384,7 +385,11 @@ def execute_play(total, play_cards):
         total (int): 手札の総数
         play_cards (list): 場に出す候補のカードリスト
     """
-    card_play = play_cards[random_by_number(len(play_cards))]
+    for i in range(len(play_cards)):
+        card_special = play_cards[i].get('special')
+        if str(card_special) == Special.DRAW_2:
+            
+    card_play = play_cards[]
     data = {
         'card_play': card_play,
     }
@@ -418,6 +423,42 @@ def determine_if_execute_pointed_not_say_uno(number_card_of_player):
     })
     time.sleep(TIME_DELAY / 1000)
 
+#手札の中でSKIPとDRAW2とナンバーのペアがあるかどうか
+def sabotage_and_number(cards):
+    skip_seq=[]
+    draw2_seq=[]
+    num_seq=[]
+    for i in range(len(cards)):
+        for j in range(len(cards)):
+            if i==j:
+                continue
+            if cards[i].get('special')==Special.SKIP and cards[i].get('color')==cards[j].get('color') and cards[j].get('number') is not None:
+                skip_seq.append(i)
+                num_seq.append(j)
+            elif cards[i].get('special')==Special.DRAW_2 and cards[i].get('color')==cards[j].get('color') and cards[j].get('number') is not None:
+                draw2_seq.append(i)
+                num_seq.append(j)
+    if len(skip_seq)>0:
+        return skip_seq[0],num_seq[0]
+    elif len(draw2_seq)>0:
+        return draw2_seq[0],num_seq[0]
+    else:
+        return False
+
+#手札の最小値を算出（自分のidのときは省きたい）
+def min_research(number_card_of_player):
+    number = []
+    for num in number_card_of_player.values():
+        number.append(int(num))
+    min_value = min(number)
+    return min_value
+#手札のスペシャルカード枚数を取得
+def special_count(cards):
+    count=0
+    for card in cards:
+        if card.get('special') is not None:
+            count=count+1
+    return count
 
 @sio.on('connect')
 def on_connect():
@@ -641,6 +682,7 @@ def on_next_player(data_res):
     #number_card_of_playerは各プレイヤーの手札枚数
     #UNOといってないプレーヤーを指摘するかどうか決定する関数
     determine_if_execute_pointed_not_say_uno(data_res.get('number_card_of_player'))
+    
 
     print('Run NEXT_PLAYER ...')
     # refresh cards_global
@@ -651,7 +693,13 @@ def on_next_player(data_res):
     #card_beforeは1つ前に捨てられたカード
     card_play_before = data_res.get('card_before', {})
     #draw_reasonはカードを引かなければいけない理由
-    draw_reason = data_res.get('draw_reason')
+    draw_reason = data_res.get('draw_reason')  
+
+    #手札の中でSKIPとDRAW2とナンバーのペアがあるかどうか
+    # is_sabotage_and_number=sabotage_and_number(cards)
+
+    #手札の最小値
+    min_player=min_research(data_res.get('number_card_of_player'))
 
     # play_wild_draw4_turnの直後のターンの場合 プレイの前にChallengeができます。
     # ただし、ホワイトワイルド（bind_2）の効果が発動している間はチャレンジができません。
@@ -680,6 +728,7 @@ def on_next_player(data_res):
         cards,
         data_res.get('must_call_draw_card'),
     )
+    special_card_count=special_count(cards)
     #1/10の確率でspecial_logicを発動
     special_logic_num_random = random_by_number(10)
     if special_logic_num_random == 0:
@@ -695,25 +744,30 @@ def on_next_player(data_res):
         })
         send_draw_card({})
         return
-    elif len(cards_valid) > 0:
-        # If len(cards_valid) > 0, Player can play card from cards_valid list
-        execute_play(len(cards), cards_valid)
-        return
-    elif len(cards_wild) > 0:
-        # If len(cards_wild) > 0, Player can play card from cards_valid list
-        execute_play(len(cards), cards_wild)
-        return
-    elif len(cards_wild4) > 0:
-        # If len(cards_wild4) > 0, Player can play card from cards_wild4 list
-        execute_play(len(cards), cards_wild4)
-        return
+    #邪魔
+    elif int(data_res.get('number_card_of_player').get(data_res.get('next_player')))==1:
+        if len(cards_sabotage)>0:
+            execute_play(len(cards), cards_sabotage)
+            return
+    #保守
+    elif min_player <= 3 and min_player <= special_card_count:
+    #攻め
     else:
-        """
-        有効なカードがない場合、プレイヤーはイベントDRAW_CARDを呼び出す必要があります。
-        詳細はプレイヤー仕様書を参照してください。
-        """
-        send_draw_card({})
-        return
+    # elif len(cards_reverse)>0:
+    #     execute_play(len(cards), cards_reverse)
+    #     return
+    # elif is_sabotage_and_number:
+    #     execute_play(len(cards), cards_reverse)
+    #     return
+    # elif not is_sabotage_and_number:
+
+    # else:
+    #     """
+    #     有効なカードがない場合、プレイヤーはイベントDRAW_CARDを呼び出す必要があります。
+    #     詳細はプレイヤー仕様書を参照してください。
+    #     """
+    #     send_draw_card({})
+    #     return
 
 
 @sio.on('*')
