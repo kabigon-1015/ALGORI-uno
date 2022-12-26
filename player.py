@@ -507,7 +507,7 @@ def special_count(cards):
         if card.get('special') is not None:
             count=count+1
     return count
-#場札の色を決定
+#場札の色を決定(wild)
 def select_color_of_wild(cards):
     color=[0,0,0,0]
     # cards=data_res.get('card_of_player')
@@ -524,13 +524,32 @@ def select_color_of_wild(cards):
     max_index = color.index(max_value)
     return max_index
 
+def select_color_of_number(cards):
+    color=[0,0,0,0]
+    # cards=data_res.get('card_of_player')
+    for i in range(len(cards)):
+        if cards.get('color')==Color.RED:
+            color[0]=color[0]+1
+        elif cards.get('color')==Color.YELLOW:
+            color[1]=color[1]+1
+        elif cards.get('color')==Color.GREEN:
+            color[2]=color[2]+1
+        elif cards.get('color')==Color.BLUE:
+            color[3]=color[3]+1
+    min_value = min(color)
+    min_index = color.index(min_value)
+    return min_index
+
+
 def cards_number_change(cards_number,card_play_before):
     for i in range(len(cards_number)):
         if card_play_before.get('color')!=cards_number[i].get('color'):
             return cards_number[i]
     return False
+
 #保守
-def conservative(cards,cards_wild4, cards_wild, cards_wild_shuffle, cards_sabotage, cards_reverse, cards_number):
+def conservative(data_res,cards_wild4, cards_wild, cards_wild_shuffle, cards_sabotage, cards_reverse, cards_number):
+    cards = data_res.get('card_of_player')
     if len(cards_wild)>0:
         execute_play_wild(len(cards), cards_wild)
         return
@@ -553,11 +572,40 @@ def conservative(cards,cards_wild4, cards_wild, cards_wild_shuffle, cards_sabota
         active(cards,cards_wild4, cards_wild, cards_wild_shuffle, cards_sabotage, cards_reverse, cards_number)
         return
 
+def number_count(cards):
+    count=0
+    for card in cards:
+        if card.get('number') is not None:
+            count=count+1
+    return count
 
 #攻撃
-def active(cards,cards_wild4, cards_wild, cards_wild_shuffle, cards_sabotage, cards_reverse, cards_number):
-    color_of_wild = ARR_COLOR[select_color_of_wild(cards)]
-    
+def active(data_res,cards_wild4, cards_wild, cards_wild_shuffle, cards_sabotage, cards_reverse, cards_number):
+    cards = data_res.get('card_of_player')
+    total_cards_number = sum([int(i) for i in data_res.get('number_card_of_player').values()])
+    card_play_before = data_res.get('card_before', {})
+    color_min = ARR_COLOR[select_color_of_number(cards)]
+    #要確認
+    if len(cards_wild_shuffle) > 0 and len(cards)-1 > total_cards_number/4 and (len(cards_wild4) + len(cards_wild) + len(cards_sabotage) <= len(cards)-(total_cards_number/4)-1):
+        execute_play_wild(len(cards), cards_wild_shuffle)
+    elif len(cards_reverse)>0:
+        execute_play_reverse(len(cards),cards_reverse)
+    #要確認
+    elif (len(cards_number)>0 and number_count(cards)>1) and cards_number_change(cards_number,card_play_before) and (card_play_before.get('color') == color_min):
+        execute_play_number_color_change(len(cards), cards_number,card_play_before)
+    elif len(cards_number)>0 and number_count(cards)>1:
+        execute_play_number(len(cards),cards_number)
+    elif len(cards_sabotage)>0:
+        execute_play_sabotage(len(cards),cards_sabotage)
+    elif len(cards_wild)>0:
+        execute_play_wild(len(cards), cards_wild)
+    #これであがり
+    elif len(cards_number)>0:
+        execute_play_number(len(cards),cards_number)
+    elif len(cards_wild4)>0:
+        execute_play_wild(len(cards), cards_wild4)
+    else:
+        send_draw_card({})
 
     
 @sio.on('connect')
@@ -846,6 +894,7 @@ def on_next_player(data_res):
 
     #邪魔
     if int(data_res.get('number_card_of_player').get(data_res.get('next_player')))==1:
+        #shuffleいれるかも
         if len(cards_sabotage)>0:
             execute_play_sabotage(len(cards), cards_sabotage)
             return
@@ -859,13 +908,13 @@ def on_next_player(data_res):
             execute_play_number_color_change(len(cards), cards_number,card_play_before)
             return
         else:
-            conservative(cards,cards_wild4, cards_wild, cards_wild_shuffle, cards_sabotage, cards_reverse, cards_number)
+            conservative(data_res,cards_wild4, cards_wild, cards_wild_shuffle, cards_sabotage, cards_reverse, cards_number)
     #保守
     elif min_player <= 3 and min_player <= special_card_count:
-        conservative(cards,cards_wild4, cards_wild, cards_wild_shuffle, cards_sabotage, cards_reverse, cards_number)
+        conservative(data_res,cards_wild4, cards_wild, cards_wild_shuffle, cards_sabotage, cards_reverse, cards_number)
     #攻め
     elif len(cards_wild4)>0 or len(cards_wild)>0 or len(cards_wild_shuffle)>0 or  len(cards_sabotage)>0 or len(cards_reverse)>0 or len(cards_number)>0:
-        active(cards,cards_wild4, cards_wild, cards_wild_shuffle, cards_sabotage, cards_reverse, cards_number)
+        active(data_res,cards_wild4, cards_wild, cards_wild_shuffle, cards_sabotage, cards_reverse, cards_number)
     else:
         send_draw_card({})
         return
