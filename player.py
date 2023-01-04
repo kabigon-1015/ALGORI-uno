@@ -383,13 +383,13 @@ def execute_play_sabotage(total, play_cards):
         total (int): 手札の総数
         play_cards (list): 場に出す候補のカードリスト
     """
-    for i in range(len(play_cards)):
-        if play_cards[i].get('special')==Special.SKIP:
-            card_play=play_cards[i] 
-            break
     for j in range(len(play_cards)):
         if play_cards[j].get('special')==Special.DRAW_2:
             card_play=play_cards[j]
+            break
+    for i in range(len(play_cards)):
+        if play_cards[i].get('special')==Special.SKIP:
+            card_play=play_cards[i] 
             break
     data = {
         'card_play': card_play,
@@ -404,7 +404,7 @@ def execute_play_sabotage(total, play_cards):
 
 def execute_play_reverse(total, play_cards):
     
-    card_play = play_cards[random_by_number(len(play_cards))]
+    card_play = play_cards[0]
     data = {
         'card_play': card_play,
     }
@@ -417,7 +417,7 @@ def execute_play_reverse(total, play_cards):
 
 def execute_play_wild(total, play_cards):
 
-    card_play = play_cards[random_by_number(len(play_cards))]
+    card_play = play_cards[0]
     data = {
         'card_play': card_play,
     }
@@ -440,7 +440,7 @@ def execute_play_white_wild(total, play_cards):
         # call event play-card
         send_play_card(data)
 
-def execute_play_number_color_change(total, play_cards, card_play_before):
+def execute_play_color_change(total, play_cards, card_play_before):
     for i in range(len(play_cards)):
         if card_play_before.get('color')!=play_cards[i].get('color'):
             card_play=play_cards[i]
@@ -556,25 +556,31 @@ def select_color_of_number(cards):
 def cards_number_change(cards_number,card_play_before):
     for i in range(len(cards_number)):
         if card_play_before.get('color')!=cards_number[i].get('color'):
-            return cards_number[i]
+            return True
+    return False
+
+def cards_sabotage_change(cards_sabotage,card_play_before):
+    for i in range(len(cards_sabotage)):
+        if card_play_before.get('color')!=cards_sabotage[i].get('color'):
+            return True
     return False
 
 #保守
 def conservative(data_res,cards_wild4, cards_wild, cards_wild_shuffle, cards_white_wild, cards_sabotage, cards_reverse, cards_number):
     cards = data_res.get('card_of_player')
     average_cards_number = sum([int(i) for i in data_res.get('number_card_of_player').values()])/4
-    if len(cards_wild)>0:
-        execute_play_wild(len(cards), cards_wild)
-    elif len(cards_wild_shuffle)>0 and len(cards) > average_cards_number:
+    if len(cards_wild_shuffle)>0:
         execute_play_wild(len(cards), cards_wild_shuffle)
+    elif len(cards_white_wild)>0:
+        execute_play_white_wild(len(cards), cards_white_wild)
+    elif len(cards_wild)>0:
+        execute_play_wild(len(cards), cards_wild)
     elif len(cards_sabotage)>0:
         execute_play_sabotage(len(cards),cards_sabotage)
     elif len(cards_reverse)>0:
         execute_play_reverse(len(cards),cards_reverse)
     elif len(cards_number)>0:
         execute_play_number(len(cards),cards_number)
-    elif len(cards_wild_shuffle)>0:
-        execute_play_wild(len(cards), cards_wild_shuffle)
     elif len(cards_wild4)>0:
         execute_play_wild(len(cards), cards_wild4)
     else:
@@ -616,13 +622,11 @@ def number_count(cards):
 #     else:
 #         send_draw_card({})
 
-#たまに数字がさせるのに出さない．
 def active(data_res, cards_wild4, cards_wild, cards_wild_shuffle, cards_white_wild, cards_sabotage, cards_reverse, cards_number):
     cards = data_res.get('card_of_player')
     average_cards_number = sum([int(i) for i in data_res.get('number_card_of_player').values()])/4
     card_play_before = data_res.get('card_before', {})
     color_min = ARR_COLOR[select_color_of_number(cards)]
-    # special_seq,number_seq=sabotage_and_number(cards) #エラー起きてる可能性大
     if len(cards_wild4)>0 or len(cards_wild)>0:
         if len(cards_wild_shuffle)>0:
             if len(cards_wild4)>0 and len(cards_wild)>0 and len(cards_white_wild)>0:
@@ -635,8 +639,10 @@ def active(data_res, cards_wild4, cards_wild, cards_wild_shuffle, cards_white_wi
                 execute_play_wild(len(cards), cards_wild)
             elif len(cards_reverse)>0:
                 execute_play_reverse(len(cards),cards_reverse)
-            elif (len(cards_number)>0 and number_count(cards)>1) and cards_number_change(cards_number,card_play_before) and (card_play_before.get('color') == str(color_min)):
-                execute_play_number_color_change(len(cards), cards_number,card_play_before)
+            elif len(cards_number)>0 and cards_number_change(cards_number,card_play_before) and (card_play_before.get('color') == str(color_min)):
+                execute_play_color_change(len(cards), cards_number,card_play_before)
+            elif len(cards_sabotage)>0 and cards_sabotage_change(cards_sabotage,card_play_before) and (card_play_before.get('color') == str(color_min)):
+                execute_play_color_change(len(cards), cards_sabotage,card_play_before)
             elif len(cards_sabotage)>0:
                 execute_play_sabotage(len(cards),cards_sabotage)
             elif len(cards_number)>0:
@@ -645,10 +651,12 @@ def active(data_res, cards_wild4, cards_wild, cards_wild_shuffle, cards_white_wi
                 execute_play_wild(len(cards),cards_wild)
             elif len(cards_white_wild)>0:
                 execute_play_white_wild(len(cards),cards_white_wild)
-            elif len(cards_wild_shuffle)>0 and len(cards) > average_cards_number:
+            elif len(cards_wild_shuffle)>0 and len(cards)-1 > average_cards_number:
                 execute_play_wild(len(cards),cards_wild_shuffle)
             elif len(cards_wild4)>0:
                 execute_play_wild(len(cards),cards_wild4)
+            elif len(cards_wild_shuffle)>0 and len(cards)==1:
+                execute_play_wild(len(cards),cards_wild_shuffle)
             else:
                 send_draw_card({})
         else:
@@ -656,20 +664,20 @@ def active(data_res, cards_wild4, cards_wild, cards_wild_shuffle, cards_white_wi
                 execute_play_reverse(len(cards),cards_reverse)
             elif len(cards_wild4)>0 and len(cards_wild)>0 and len(cards_white_wild)>0:
                 execute_play_white_wild(len(cards), cards_white_wild)
-            elif (len(cards_number)>0 and number_count(cards)>1) and cards_number_change(cards_number,card_play_before) and (card_play_before.get('color') == str(color_min)):
-                execute_play_number_color_change(len(cards), cards_number,card_play_before)
-            elif len(cards_number)>0 and number_count(cards)>1:
-                execute_play_number(len(cards),cards_number)
+            elif len(cards_sabotage)>0 and cards_sabotage_change(cards_sabotage,card_play_before) and (card_play_before.get('color') == str(color_min)):
+                execute_play_color_change(len(cards), cards_sabotage,card_play_before)
+            elif len(cards_number)>0 and cards_number_change(cards_number,card_play_before) and (card_play_before.get('color') == str(color_min)):
+                execute_play_color_change(len(cards), cards_number,card_play_before)
             elif len(cards_sabotage)>0:
                 execute_play_sabotage(len(cards),cards_sabotage)
+            elif len(cards_number)>0:
+                execute_play_number(len(cards),cards_number)
             elif len(cards_wild4)>0 and len(cards_white_wild)>0:
                 execute_play_white_wild(len(cards), cards_white_wild)
             elif len(cards_wild)>0 and len(cards_white_wild)>0:
                 execute_play_white_wild(len(cards), cards_white_wild)
             elif len(cards_wild4)>0 and len(cards_wild)>0:
                 execute_play_wild(len(cards), cards_wild)
-            elif len(cards_number)>0:
-                execute_play_number(len(cards),cards_number)
             elif len(cards_wild)>0:
                 execute_play_wild(len(cards),cards_wild)
             elif len(cards_white_wild)>0:
@@ -677,24 +685,23 @@ def active(data_res, cards_wild4, cards_wild, cards_wild_shuffle, cards_white_wi
             elif len(cards_wild4)>0:
                 execute_play_wild(len(cards),cards_wild4)
             else:
-                send_draw_card({})
-    # elif special_seq and number_seq:  
+                send_draw_card({})  
     else:
-        if len(cards_white_wild)>0 and len(cards_wild_shuffle)>0:
-            execute_play_white_wild(len(cards),cards_white_wild)
-        elif len(cards_white_wild)>0:
-            execute_play_white_wild(len(cards),cards_white_wild)
-        elif len(cards_wild_shuffle)>0 and len(cards)-1 > average_cards_number:
+        if len(cards_wild_shuffle)>0 and len(cards)-1 >= average_cards_number:
             execute_play_wild(len(cards),cards_wild_shuffle)
         elif len(cards_reverse)>0:
             execute_play_reverse(len(cards),cards_reverse)
-        elif (len(cards_number)>0 and number_count(cards)>1) and cards_number_change(cards_number,card_play_before) and (card_play_before.get('color') == str(color_min)):
-            execute_play_number_color_change(len(cards), cards_number,card_play_before)
+        elif len(cards_sabotage)>0 and cards_sabotage_change(cards_sabotage,card_play_before) and (card_play_before.get('color') == str(color_min)):
+            execute_play_color_change(len(cards), cards_sabotage,card_play_before)
         elif len(cards_sabotage)>0:
             execute_play_sabotage(len(cards),cards_sabotage)
+        elif len(cards_number)>0 and cards_number_change(cards_number,card_play_before) and (card_play_before.get('color') == str(color_min)):
+            execute_play_color_change(len(cards), cards_number,card_play_before)
         elif len(cards_number)>0:
             execute_play_number(len(cards),cards_number)
-        elif len(cards_wild_shuffle)>0:
+        elif len(cards_white_wild)>0:
+            execute_play_white_wild(len(cards),cards_white_wild)
+        elif len(cards_wild_shuffle)>0 and len(cards)==1:
             execute_play_wild(len(cards),cards_wild_shuffle)
         else:
             send_draw_card({})
@@ -825,6 +832,7 @@ def on_play_card(data_res):
 #山札からカードを引く（p）
 @sio.on(SocketConst.EMIT.DRAW_CARD)
 def on_draw_card(data_res):
+    # global is_draw
     print('{} data_res:'.format(SocketConst.EMIT.DRAW_CARD), data_res)
     if data_res.get('player') == id:
         if data_res.get('can_play_draw_card'):
@@ -988,25 +996,27 @@ def on_next_player(data_res):
     #邪魔
     if int(data_res.get('number_card_of_player').get(data_res.get('next_player')))==1:
         #shuffleいれるかも
-        if len(cards_sabotage)>0:
+        if len(cards_white_wild)>0:
+            execute_play_white_wild(len(cards),cards_white_wild)
+        elif len(cards_sabotage)>0:
             execute_play_sabotage(len(cards), cards_sabotage)
-            return
-        elif len(cards_reverse)>0:
-            execute_play_reverse(len(cards), cards_reverse)
-            return
-        elif len(cards_wild)>0:#一番手札の多い色に変更
+        elif len(cards_wild_shuffle)>0:
+            execute_play_wild(len(cards), cards_wild_shuffle)
+        # elif len(cards_reverse)>0:
+        #     execute_play_reverse(len(cards), cards_reverse)
+        elif len(cards_wild)>0:#相手の一番持ってない色に変更したい
             execute_play_wild(len(cards), cards_wild)
-            return
-        elif cards_number_change(cards_number,card_play_before):
-            execute_play_number_color_change(len(cards), cards_number,card_play_before)
-            return
+        # elif cards_number_change(cards_number, card_play_before):
+        #     execute_play_color_change(len(cards), cards_number,card_play_before)
         else:
-            conservative(data_res,cards_wild4, cards_wild, cards_wild_shuffle, cards_sabotage, cards_reverse, cards_number)
+            conservative(data_res, cards_wild4, cards_wild, cards_wild_shuffle, cards_white_wild, cards_sabotage, cards_reverse, cards_number)
+    #前の人がdraw_cardした時reverseを出す
+    # elif is_draw:
     #保守
-    elif (min_player <= special_card_count) or (len(cards)-min_player>=3):
+    elif min_player<=2 and len(cards)-min_player>=3:
         conservative(data_res,cards_wild4, cards_wild, cards_wild_shuffle, cards_white_wild, cards_sabotage, cards_reverse, cards_number)
     #攻め
-    elif len(cards_wild4)>0 or len(cards_wild)>0 or len(cards_wild_shuffle)>0 or len(cards_sabotage)>0 or len(cards_reverse)>0 or len(cards_number)>0:
+    elif len(cards_wild4)>0 or len(cards_wild)>0 or len(cards_wild_shuffle)>0 or len(cards_white_wild)>0 or len(cards_sabotage)>0 or len(cards_reverse)>0 or len(cards_number)>0:
         active(data_res, cards_wild4, cards_wild, cards_wild_shuffle, cards_white_wild, cards_sabotage, cards_reverse, cards_number)
     else:
         send_draw_card({})
