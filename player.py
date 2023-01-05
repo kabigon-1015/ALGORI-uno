@@ -139,6 +139,13 @@ id = ''
 cards_global = []
 uno_declared = {}
 
+color_check={}
+play_color=''
+is_draw=False
+before_id=''
+is_wild_sabotage=False
+next_id=''
+
 if not host:
     print('Host missed')
     os._exit(0)
@@ -548,9 +555,13 @@ def select_color_of_number(cards):
             color[2]=color[2]+1
         elif cards[i].get('color')==Color.BLUE:
             color[3]=color[3]+1
-    min_value = min([i for i in color if i!=0])
-    min_index = color.index(min_value)
-    return min_index
+    min_color=[i for i in color if i!=0]
+    if len(min_color)>0:
+        min_value = min(min_color)
+        min_index = color.index(min_value)
+        return min_index
+    else:
+        return 0
 
 
 def cards_number_change(cards_number,card_play_before):
@@ -792,6 +803,9 @@ def on_receiver_card(data_res):
 #対戦開始（d）
 @sio.on(SocketConst.EMIT.FIRST_PLAYER)
 def on_first_player(data_res):
+    global color_check
+    color_check[data_res.get('play_order')[0]]=None
+    color_check={data_res.get('play_order')[0]:None,data_res.get('play_order')[1]:None,data_res.get('play_order')[2]:None,data_res.get('play_order')[3]:None}
     print('{} is first player.'.format(data_res.get('first_player')))
     print(data_res)
 
@@ -799,7 +813,12 @@ def on_first_player(data_res):
 @sio.on(SocketConst.EMIT.COLOR_OF_WILD)
 def on_color_of_wild(data_res):
     global cards_global
-    color_of_wild = ARR_COLOR[select_color_of_wild(cards_global)]
+    if is_wild_sabotage:
+        color_of_wild = color_check.get(next_id)
+    elif len(cards_global)>0:
+        color_of_wild = ARR_COLOR[select_color_of_wild(cards_global)]
+    else:
+        color_of_wild = ARR_COLOR[0]
     data = {
         'color_of_wild': color_of_wild,
     }
@@ -819,7 +838,9 @@ def on_suffle_wild(data_res):
 @sio.on(SocketConst.EMIT.PLAY_CARD)
 def on_play_card(data_res):
     global cards_global
+    global play_color
     card_play = data_res.get('card_play')
+    play_color=card_play.get('color')
     print(
         '{} play card {} {}.'.format(
             data_res.get('player'), card_play.get('color'), card_play.get('special') or card_play.get('number'))
@@ -832,7 +853,12 @@ def on_play_card(data_res):
 #山札からカードを引く（p）
 @sio.on(SocketConst.EMIT.DRAW_CARD)
 def on_draw_card(data_res):
-    # global is_draw
+    global is_draw
+    global before_id
+    global color_check
+    is_draw=data_res.get('is_draw')
+    before_id=data_res.get('player')
+    color_check[data_res.get('player')]=play_color
     print('{} data_res:'.format(SocketConst.EMIT.DRAW_CARD), data_res)
     if data_res.get('player') == id:
         if data_res.get('can_play_draw_card'):
@@ -920,6 +946,12 @@ def on_finish_game(data_res):
 @sio.on(SocketConst.EMIT.NEXT_PLAYER)
 def on_next_player(data_res):
     global cards_global
+    global is_wild_sabotage
+    global next_id
+    global is_draw
+
+    is_wild_sabotage=False
+    next_id=data_res.get('next_player')
     print('{} data_res: '.format(SocketConst.EMIT.NEXT_PLAYER), data_res)
     time.sleep(TIME_DELAY / 1000)
     print('{} is next player. turn: {}'.format(
@@ -960,7 +992,7 @@ def on_next_player(data_res):
         sio.emit(
             SocketConst.EMIT.CHALLENGE,
             {
-                'is_challenge': True if num_random else False,
+                'is_challenge': False,
             },
             callback=lambda err, undefined: handle_error(
                 SocketConst.EMIT.CHALLENGE, err)
@@ -1005,13 +1037,24 @@ def on_next_player(data_res):
         # elif len(cards_reverse)>0:
         #     execute_play_reverse(len(cards), cards_reverse)
         elif len(cards_wild)>0:#相手の一番持ってない色に変更したい
+            is_wild_sabotage=True
             execute_play_wild(len(cards), cards_wild)
         # elif cards_number_change(cards_number, card_play_before):
         #     execute_play_color_change(len(cards), cards_number,card_play_before)
         else:
             conservative(data_res, cards_wild4, cards_wild, cards_wild_shuffle, cards_white_wild, cards_sabotage, cards_reverse, cards_number)
-    #前の人がdraw_cardした時reverseを出す
-    # elif is_draw:
+    #前の人がdraw_cardした時reverseを出す（邪魔）
+    elif data_res.get('before_player')==before_id and str(is_draw) == 'True':
+        is_draw=False
+        if len(cards_reverse)>0:
+            execute_play_reverse(len(cards), cards_reverse)
+        elif min_player<=2 and len(cards)-min_player>=3:
+            conservative(data_res,cards_wild4, cards_wild, cards_wild_shuffle, cards_white_wild, cards_sabotage, cards_reverse, cards_number)
+        elif len(cards_wild4)>0 or len(cards_wild)>0 or len(cards_wild_shuffle)>0 or len(cards_white_wild)>0 or len(cards_sabotage)>0 or len(cards_reverse)>0 or len(cards_number)>0:
+            active(data_res, cards_wild4, cards_wild, cards_wild_shuffle, cards_white_wild, cards_sabotage, cards_reverse, cards_number)
+        else:
+            send_draw_card({})
+            return
     #保守
     elif min_player<=2 and len(cards)-min_player>=3:
         conservative(data_res,cards_wild4, cards_wild, cards_wild_shuffle, cards_white_wild, cards_sabotage, cards_reverse, cards_number)
