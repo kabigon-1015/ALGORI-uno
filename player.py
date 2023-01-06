@@ -131,8 +131,6 @@ TEST_TOOL_EVENT_DATA = {
     },
 }
 
-
-
 once_connected = False
 
 id = ''
@@ -462,6 +460,14 @@ def execute_play_color_change(total, play_cards, card_play_before):
         # call event play-card
         send_play_card(data)
 
+#Next_playerがUNO状態の時に出せない色のナンバーカードを出して邪魔する
+def execute_play_color_sabotage(total, cards_number):
+    card_play=[]
+    for i in range(len(cards_number)):
+        if cards_number[i].get('color')==color_check.get(next_id):
+            card_play.append(cards_number[i])
+    execute_play_number(total, card_play)
+
 #変更の必要性がないかも
 def determine_if_execute_pointed_not_say_uno(number_card_of_player):
   global uno_declared
@@ -529,7 +535,6 @@ def special_count(cards):
 #場札の色を決定(wild)
 def select_color_of_wild(cards):
     color=[0,0,0,0]
-    # cards=data_res.get('card_of_player')
     for i in range(len(cards)):
         if cards[i].get('color')==Color.RED:
             color[0]=color[0]+1
@@ -545,7 +550,6 @@ def select_color_of_wild(cards):
 
 def select_color_of_number(cards):
     color=[0,0,0,0]
-    # cards=data_res.get('card_of_player')
     for i in range(len(cards)):
         if cards[i].get('color')==Color.RED:
             color[0]=color[0]+1
@@ -804,20 +808,31 @@ def on_receiver_card(data_res):
 @sio.on(SocketConst.EMIT.FIRST_PLAYER)
 def on_first_player(data_res):
     global color_check
-    color_check[data_res.get('play_order')[0]]=None
+    # color_check[data_res.get('play_order')[0]]=None
     color_check={data_res.get('play_order')[0]:None,data_res.get('play_order')[1]:None,data_res.get('play_order')[2]:None,data_res.get('play_order')[3]:None}
     print('{} is first player.'.format(data_res.get('first_player')))
     print(data_res)
 
-#場札の色を変更（d）　変更する
+#場札の色を変更（d）
 @sio.on(SocketConst.EMIT.COLOR_OF_WILD)
 def on_color_of_wild(data_res):
     global cards_global
+    global is_wild_sabotage
+    global color_check
+
     if is_wild_sabotage:
+        data = {
+            'title': 'aaaaaa',
+            }
+        send_special_logic(data)
         color_of_wild = color_check.get(next_id)
     elif len(cards_global)>0:
         color_of_wild = ARR_COLOR[select_color_of_wild(cards_global)]
     else:
+        data = {
+            'title': 'cccccc',
+            }
+        send_special_logic(data)
         color_of_wild = ARR_COLOR[0]
     data = {
         'color_of_wild': color_of_wild,
@@ -840,7 +855,8 @@ def on_play_card(data_res):
     global cards_global
     global play_color
     card_play = data_res.get('card_play')
-    play_color=card_play.get('color')
+    if card_play.get('color')!=Color.BLACK and card_play.get('color')!=Color.WHITE:
+        play_color=card_play.get('color')
     print(
         '{} play card {} {}.'.format(
             data_res.get('player'), card_play.get('color'), card_play.get('special') or card_play.get('number'))
@@ -856,6 +872,8 @@ def on_draw_card(data_res):
     global is_draw
     global before_id
     global color_check
+    global play_color
+
     is_draw=data_res.get('is_draw')
     before_id=data_res.get('player')
     color_check[data_res.get('player')]=play_color
@@ -962,7 +980,6 @@ def on_next_player(data_res):
     #UNOといってないプレーヤーを指摘するかどうか決定する関数
     determine_if_execute_pointed_not_say_uno(data_res.get('number_card_of_player'))
     
-
     print('Run NEXT_PLAYER ...')
     # refresh cards_global
     #card_of_playerは自分の手札
@@ -1010,12 +1027,12 @@ def on_next_player(data_res):
 
     special_card_count=special_count(cards)
     #1/10の確率でspecial_logicを発動
-    special_logic_num_random = random_by_number(10)
-    if special_logic_num_random == 0:
-        data = {
-            'title': SPECIAL_LOGIC_TITLE,
-        }
-        send_special_logic(data)
+    # special_logic_num_random = random_by_number(10)
+    # if special_logic_num_random == 0:
+    #     data = {
+    #         'title': SPECIAL_LOGIC_TITLE,
+    #     }
+    #     send_special_logic(data)
     #強制的にカードを引かなければならない場合
     if str(data_res.get('must_call_draw_card')) == 'True':
         # If must_call_draw_card = True, Player must be call event draw_card
@@ -1027,20 +1044,29 @@ def on_next_player(data_res):
 
     #邪魔
     if int(data_res.get('number_card_of_player').get(data_res.get('next_player')))==1:
-        #shuffleいれるかも
+        data = {
+            'title': 'sabotage',
+            }
+        send_special_logic(data)
         if len(cards_white_wild)>0:
             execute_play_white_wild(len(cards),cards_white_wild)
         elif len(cards_sabotage)>0:
             execute_play_sabotage(len(cards), cards_sabotage)
         elif len(cards_wild_shuffle)>0:
             execute_play_wild(len(cards), cards_wild_shuffle)
-        # elif len(cards_reverse)>0:
-        #     execute_play_reverse(len(cards), cards_reverse)
-        elif len(cards_wild)>0:#相手の一番持ってない色に変更したい
+        elif len(cards_wild)>0 and color_check.get(next_id) is not None:
+            data = {
+            'title': 'sabotagewild',
+            }
+            send_special_logic(data)
             is_wild_sabotage=True
             execute_play_wild(len(cards), cards_wild)
-        # elif cards_number_change(cards_number, card_play_before):
-        #     execute_play_color_change(len(cards), cards_number,card_play_before)
+        elif len([i for i in range(len(cards_number)) if cards_number[i].get('color')==color_check.get(next_id)])>0:
+            data = {
+            'title': 'sabotagenumber',
+            }
+            send_special_logic(data)
+            execute_play_color_sabotage(len(cards), cards_number)
         else:
             conservative(data_res, cards_wild4, cards_wild, cards_wild_shuffle, cards_white_wild, cards_sabotage, cards_reverse, cards_number)
     #前の人がdraw_cardした時reverseを出す（邪魔）
@@ -1064,24 +1090,6 @@ def on_next_player(data_res):
     else:
         send_draw_card({})
         return
-
-        
-    # elif len(cards_reverse)>0:
-    #     execute_play(len(cards), cards_reverse)
-    #     return
-    # elif is_sabotage_and_number:
-    #     execute_play(len(cards), cards_reverse)
-    #     return
-    # elif not is_sabotage_and_number:
-
-    # else:
-    #     """
-    #     有効なカードがない場合、プレイヤーはイベントDRAW_CARDを呼び出す必要があります。
-    #     詳細はプレイヤー仕様書を参照してください。
-    #     """
-    #     send_draw_card({})
-    #     return
-
 
 @sio.on('*')
 def catch_all(event, data):
