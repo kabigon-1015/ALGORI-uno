@@ -143,6 +143,8 @@ is_draw=False
 before_id=''
 is_wild_sabotage=False
 next_id=''
+left_id=''
+right_id=''
 
 if not host:
     print('Host missed')
@@ -808,7 +810,19 @@ def on_receiver_card(data_res):
 @sio.on(SocketConst.EMIT.FIRST_PLAYER)
 def on_first_player(data_res):
     global color_check
-    # color_check[data_res.get('play_order')[0]]=None
+    global left_id
+    global right_id
+    global is_wild_sabotage
+
+    #初期化
+    is_wild_sabotage=False
+
+    play_order=data_res.get('play_order')
+    for i in range(len(play_order)):
+        if play_order[i]==id:
+            left_id=play_order[(i+1)%4]
+            right_id=play_order[(i-1)%4]
+            break
     color_check={data_res.get('play_order')[0]:None,data_res.get('play_order')[1]:None,data_res.get('play_order')[2]:None,data_res.get('play_order')[3]:None}
     print('{} is first player.'.format(data_res.get('first_player')))
     print(data_res)
@@ -969,7 +983,10 @@ def on_next_player(data_res):
     global is_draw
 
     is_wild_sabotage=False
-    next_id=data_res.get('next_player')
+    if data_res.get('turn_right'):
+        next_id=left_id
+    else:
+        next_id=right_id
     print('{} data_res: '.format(SocketConst.EMIT.NEXT_PLAYER), data_res)
     time.sleep(TIME_DELAY / 1000)
     print('{} is next player. turn: {}'.format(
@@ -1043,7 +1060,7 @@ def on_next_player(data_res):
         return
 
     #邪魔
-    if int(data_res.get('number_card_of_player').get(data_res.get('next_player')))==1:
+    if int(data_res.get('number_card_of_player').get(next_id))==1:
         data = {
             'title': 'sabotage',
             }
