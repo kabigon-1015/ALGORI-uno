@@ -59,10 +59,11 @@ class DrawReason:
   DRAW_2 = 'draw_2'
   WILD_DRAW_4 = 'wild_draw_4'
   BIND_2 = 'bind_2'
-  NOTING = 'nothing'
+  NOTHING = 'nothing'
 
 SPECIAL_LOGIC_TITLE = '○○○○○○○○○○○○○○○○○○○○○○○○○○○○'
 ARR_COLOR = [Color.RED, Color.YELLOW, Color.GREEN, Color.BLUE]
+ARR_COLOR_KANJI={Color.RED:'赤色',Color.YELLOW:'黄色',Color.GREEN:'緑色',Color.BLUE:'青色'}
 TEST_TOOL_HOST_PORT = '3000'
 TIME_DELAY = 10
 
@@ -139,12 +140,13 @@ uno_declared = {}
 
 color_check={}
 play_color=''
-is_draw=False
-before_id=''
+# is_draw=False
+draw_id=''
 is_wild_sabotage=False
 next_id=''
 left_id=''
 right_id=''
+# turn_right=True
 
 if not host:
     print('Host missed')
@@ -200,6 +202,8 @@ def send_play_card(data):
 
 #カードを引く　data={} 変更なし
 def send_draw_card(data):
+    global draw_id
+    draw_id=''
     print('{} data_req:'.format(SocketConst.EMIT.DRAW_CARD), data)
     sio.emit(
         SocketConst.EMIT.DRAW_CARD,
@@ -410,8 +414,26 @@ def execute_play_sabotage(total, play_cards):
         send_play_card(data)
 
 def execute_play_reverse(total, play_cards):
-    
+    global draw_id
+    draw_id=''
     card_play = play_cards[0]
+    data = {
+        'card_play': card_play,
+    }
+    if total == 2:
+        # call event say-uno-and-play-card
+        send_say_uno_and_draw_card(data)
+    else:
+        # call event play-card
+        send_play_card(data)
+
+def execute_play_reverse_same_color(total, cards_reverse, card_play_before):
+    global draw_id
+    draw_id=''
+    for i in range(len(cards_reverse)):
+        if cards_reverse[i].get('color')==card_play_before.get('color'):
+            card_play = cards_reverse[i]
+            break
     data = {
         'card_play': card_play,
     }
@@ -582,10 +604,19 @@ def cards_sabotage_change(cards_sabotage,card_play_before):
             return True
     return False
 
+#邪魔でreverseを出すときに同じ色のreverseがあるかどうか
+def check_cards_reverse(cards_reverse,card_play_before):
+    for i in range(len(cards_reverse)):
+        if cards_reverse[i].get('color')==card_play_before.get('color'):
+            return True
+    return False
+
 #保守
 def conservative(data_res,cards_wild4, cards_wild, cards_wild_shuffle, cards_white_wild, cards_sabotage, cards_reverse, cards_number):
+    global draw_id
+    draw_id=''
     cards = data_res.get('card_of_player')
-    average_cards_number = sum([int(i) for i in data_res.get('number_card_of_player').values()])/4
+    # average_cards_number = sum([int(i) for i in data_res.get('number_card_of_player').values()])/4
     if len(cards_wild_shuffle)>0:
         execute_play_wild(len(cards), cards_wild_shuffle)
     elif len(cards_white_wild)>0:
@@ -640,6 +671,8 @@ def number_count(cards):
 #         send_draw_card({})
 
 def active(data_res, cards_wild4, cards_wild, cards_wild_shuffle, cards_white_wild, cards_sabotage, cards_reverse, cards_number):
+    global draw_id
+    draw_id=''
     cards = data_res.get('card_of_player')
     average_cards_number = sum([int(i) for i in data_res.get('number_card_of_player').values()])/4
     card_play_before = data_res.get('card_before', {})
@@ -813,9 +846,15 @@ def on_first_player(data_res):
     global left_id
     global right_id
     global is_wild_sabotage
+    # global turn_right
+
+    # #first_cardがreverseの時左回り
+    # if data_res.get('first_card').get('special') == Special.REVERSE:
+    #     turn_right=not turn_right
 
     #初期化
     is_wild_sabotage=False
+    color_check={data_res.get('play_order')[0]:None,data_res.get('play_order')[1]:None,data_res.get('play_order')[2]:None,data_res.get('play_order')[3]:None}
 
     play_order=data_res.get('play_order')
     for i in range(len(play_order)):
@@ -823,7 +862,7 @@ def on_first_player(data_res):
             left_id=play_order[(i+1)%4]
             right_id=play_order[(i-1)%4]
             break
-    color_check={data_res.get('play_order')[0]:None,data_res.get('play_order')[1]:None,data_res.get('play_order')[2]:None,data_res.get('play_order')[3]:None}
+    
     print('{} is first player.'.format(data_res.get('first_player')))
     print(data_res)
 
@@ -868,7 +907,13 @@ def on_suffle_wild(data_res):
 def on_play_card(data_res):
     global cards_global
     global play_color
+    # global turn_right
+
     card_play = data_res.get('card_play')
+
+    # if card_play.get('special')==Special.REVERSE:
+    #     turn_right=not turn_right
+    #drawreason以外にすればよいのでは wildで色チェンジして出せなかった場合の色をほぞんできていない
     if card_play.get('color')!=Color.BLACK and card_play.get('color')!=Color.WHITE:
         play_color=card_play.get('color')
     print(
@@ -883,14 +928,13 @@ def on_play_card(data_res):
 #山札からカードを引く（p）
 @sio.on(SocketConst.EMIT.DRAW_CARD)
 def on_draw_card(data_res):
-    global is_draw
-    global before_id
+    global draw_id
     global color_check
     global play_color
 
-    is_draw=data_res.get('is_draw')
-    before_id=data_res.get('player')
-    color_check[data_res.get('player')]=play_color
+    if data_res.get('draw_reason')==DrawReason.NOTHING:
+        draw_id=data_res.get('player')
+        color_check[draw_id]=play_color
     print('{} data_res:'.format(SocketConst.EMIT.DRAW_CARD), data_res)
     if data_res.get('player') == id:
         if data_res.get('can_play_draw_card'):
@@ -980,7 +1024,10 @@ def on_next_player(data_res):
     global cards_global
     global is_wild_sabotage
     global next_id
-    global is_draw
+    # global is_draw
+    global draw_id
+    global left_id
+    global right_id
 
     is_wild_sabotage=False
     if data_res.get('turn_right'):
@@ -1059,38 +1106,62 @@ def on_next_player(data_res):
         send_draw_card({})
         return
 
-    #邪魔
-    if int(data_res.get('number_card_of_player').get(next_id))==1:
+    if draw_id != '':
         data = {
-            'title': 'sabotage',
+            'title': 'ドローテスト',
             }
         send_special_logic(data)
-        if len(cards_white_wild)>0:
-            execute_play_white_wild(len(cards),cards_white_wild)
-        elif len(cards_sabotage)>0:
-            execute_play_sabotage(len(cards), cards_sabotage)
-        elif len(cards_wild_shuffle)>0:
-            execute_play_wild(len(cards), cards_wild_shuffle)
-        elif len(cards_wild)>0 and color_check.get(next_id) is not None:
+
+    if color_check.get(next_id) is not None:
+        data = {
+            'title': 'テスト',
+            }
+        send_special_logic(data)
+
+    #邪魔
+    if int(data_res.get('number_card_of_player').get(next_id))==1 and len(cards)>1:
+        data = {
+            'title': '邪魔モード',
+            }
+        send_special_logic(data)
+        draw_id=''
+        # if len(cards_white_wild)>0:
+        #     execute_play_white_wild(len(cards),cards_white_wild)
+        # elif len(cards_sabotage)>0:
+        #     execute_play_sabotage(len(cards), cards_sabotage)
+        if len(cards_wild)>0 and color_check.get(next_id) is not None:
             data = {
-            'title': 'sabotagewild',
+            'title': 'お前'+ARR_COLOR_KANJI.get(color_check.get(next_id))+'持ってねえな！！',
             }
             send_special_logic(data)
             is_wild_sabotage=True
             execute_play_wild(len(cards), cards_wild)
         elif len([i for i in range(len(cards_number)) if cards_number[i].get('color')==color_check.get(next_id)])>0:
             data = {
-            'title': 'sabotagenumber',
+            'title': 'お前'+ARR_COLOR_KANJI.get(color_check.get(next_id))+'持ってねえな！！',
             }
             send_special_logic(data)
             execute_play_color_sabotage(len(cards), cards_number)
+        elif len(cards_wild_shuffle)>0:
+            execute_play_wild(len(cards), cards_wild_shuffle)
         else:
+            data = {
+            'title': '保守邪魔',
+            }
+            send_special_logic(data)
             conservative(data_res, cards_wild4, cards_wild, cards_wild_shuffle, cards_white_wild, cards_sabotage, cards_reverse, cards_number)
-    #前の人がdraw_cardした時reverseを出す（邪魔）
-    elif data_res.get('before_player')==before_id and str(is_draw) == 'True':
-        is_draw=False
-        if len(cards_reverse)>0:
-            execute_play_reverse(len(cards), cards_reverse)
+    #前の人がdraw_cardした時reverseを出す（邪魔）修正する必要
+    elif data_res.get('before_player')==draw_id and len(cards)>1:
+        data = {
+            'title': 'リバース邪魔モード',
+            }
+        send_special_logic(data)
+        if len(cards_reverse)>0 and check_cards_reverse(cards_reverse,card_play_before):
+            data = {
+            'title': 'お前'+ARR_COLOR_KANJI.get(color_check.get(draw_id))+'持ってねえな！！',
+            }
+            send_special_logic(data)
+            execute_play_reverse_same_color(len(cards), cards_reverse, card_play_before)
         elif min_player<=2 and len(cards)-min_player>=3:
             conservative(data_res,cards_wild4, cards_wild, cards_wild_shuffle, cards_white_wild, cards_sabotage, cards_reverse, cards_number)
         elif len(cards_wild4)>0 or len(cards_wild)>0 or len(cards_wild_shuffle)>0 or len(cards_white_wild)>0 or len(cards_sabotage)>0 or len(cards_reverse)>0 or len(cards_number)>0:
@@ -1100,6 +1171,10 @@ def on_next_player(data_res):
             return
     #保守
     elif min_player<=2 and len(cards)-min_player>=3:
+        data = {
+            'title': '諦めモード',
+            }
+        send_special_logic(data)
         conservative(data_res,cards_wild4, cards_wild, cards_wild_shuffle, cards_white_wild, cards_sabotage, cards_reverse, cards_number)
     #攻め
     elif len(cards_wild4)>0 or len(cards_wild)>0 or len(cards_wild_shuffle)>0 or len(cards_white_wild)>0 or len(cards_sabotage)>0 or len(cards_reverse)>0 or len(cards_number)>0:
