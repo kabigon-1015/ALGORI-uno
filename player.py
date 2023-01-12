@@ -15,13 +15,11 @@ from rich import print
 
 class SocketConst:
     class EMIT:
-        # メッセージの送受信
-        NEW_MESSAGE = 'new-message'
-
         JOIN_ROOM = 'join-room'
         RECEIVER_CARD = 'receiver-card'
         FIRST_PLAYER = 'first-player'
         COLOR_OF_WILD = 'color-of-wild'
+        UPDATE_COLOR = 'update-color'
         SHUFFLE_WILD = 'shuffle-wild'
         NEXT_PLAYER = 'next-player'
         PLAY_CARD = 'play-card'
@@ -30,10 +28,12 @@ class SocketConst:
         CHALLENGE = 'challenge'
         PUBLIC_CARD = 'public-card'
         SAY_UNO_AND_PLAY_CARD = 'say-uno-and-play-card'
+        SAY_UNO_AND_PLAY_DRAW_CARD = 'say-uno-and-play-draw-card'
         POINTED_NOT_SAY_UNO = 'pointed-not-say-uno'
         SPECIAL_LOGIC = 'special-logic'
         FINISH_TURN = 'finish-turn'
         FINISH_GAME = 'finish-game'
+        PENALTY = 'penalty'
 
 
 class Special:
@@ -56,10 +56,11 @@ class Color:
 
 
 class DrawReason:
-  DRAW_2 = 'draw_2'
-  WILD_DRAW_4 = 'wild_draw_4'
-  BIND_2 = 'bind_2'
-  NOTHING = 'nothing'
+    DRAW_2 = 'draw_2'
+    WILD_DRAW_4 = 'wild_draw_4'
+    BIND_2 = 'bind_2'
+    NOTING = 'nothing'
+
 
 SPECIAL_LOGIC_TITLE = '○○○○○○○○○○○○○○○○○○○○○○○○○○○○'
 ARR_COLOR = [Color.RED, Color.YELLOW, Color.GREEN, Color.BLUE]
@@ -89,7 +90,7 @@ is_test_tool = TEST_TOOL_HOST_PORT in host
 
 print('Start demo player ...')
 
-print ({
+print({
     'host': host,
     'room_name': room_name,
     'player': player,
@@ -121,6 +122,7 @@ TEST_TOOL_EVENT_DATA = {
             'number': 6
         },
     },
+    'say-uno-and-play-draw-card': {},
     'pointed-not-say-uno': {
         'target': 'Player 1',
     },
@@ -132,6 +134,7 @@ TEST_TOOL_EVENT_DATA = {
     },
 }
 
+
 once_connected = False
 
 id = ''
@@ -139,14 +142,12 @@ cards_global = []
 uno_declared = {}
 
 color_check={}
-play_color=''
-# is_draw=False
 draw_id=''
 is_wild_sabotage=False
 next_id=''
 left_id=''
 right_id=''
-# turn_right=True
+current_card={}
 
 if not host:
     print('Host missed')
@@ -164,6 +165,8 @@ if not room_name or not player:
 sio = socketio.Client()
 
 # 共通エラー処理
+
+
 def handle_error(event, err):
     if not err:
         return
@@ -180,7 +183,7 @@ def send_join_room(data, callback):
         callback=callback
     )
 
-#場札の色を変更する
+
 def send_color_of_wild(data):
     print('{} data_req:'.format(SocketConst.EMIT.COLOR_OF_WILD), data)
     sio.emit(
@@ -190,7 +193,7 @@ def send_color_of_wild(data):
             SocketConst.EMIT.COLOR_OF_WILD, err)
     )
 
-#場札にカードを出す　execute_playを変更すればいいのでここは変更なし
+
 def send_play_card(data):
     print('{} data_req:'.format(SocketConst.EMIT.PLAY_CARD), data)
     sio.emit(
@@ -200,7 +203,7 @@ def send_play_card(data):
             SocketConst.EMIT.PLAY_CARD, err)
     )
 
-#カードを引く　data={} 変更なし
+
 def send_draw_card(data):
     global draw_id
     draw_id=''
@@ -212,8 +215,8 @@ def send_draw_card(data):
             SocketConst.EMIT.DRAW_CARD, err)
     )
 
-#引いたカードをそのまま出す　変更なし
-def send_draw_play_card(data):
+
+def send_play_draw_card(data):
     print('{} data_req:'.format(SocketConst.EMIT.PLAY_DRAW_CARD), data)
     sio.emit(
         SocketConst.EMIT.PLAY_DRAW_CARD,
@@ -222,8 +225,8 @@ def send_draw_play_card(data):
             SocketConst.EMIT.PLAY_DRAW_CARD, err)
     )
 
-#UNOと言ってカードを出す　多分綴りが間違ってるdraw→play 変更なし
-def send_say_uno_and_draw_card(data):
+
+def send_say_uno_and_play_card(data):
     print('{} data_req:'.format(SocketConst.EMIT.SAY_UNO_AND_PLAY_CARD), data)
     sio.emit(
         SocketConst.EMIT.SAY_UNO_AND_PLAY_CARD,
@@ -232,7 +235,17 @@ def send_say_uno_and_draw_card(data):
             SocketConst.EMIT.SAY_UNO_AND_PLAY_CARD, err)
     )
 
-#UNOと言ってないプレイヤーを指摘する
+
+def send_say_uno_and_play_draw_card(data):
+    print('{} data_req:'.format(SocketConst.EMIT.SAY_UNO_AND_PLAY_DRAW_CARD), data)
+    sio.emit(
+        SocketConst.EMIT.SAY_UNO_AND_PLAY_DRAW_CARD,
+        data,
+        callback=lambda err, undefined: handle_error(
+            SocketConst.EMIT.SAY_UNO_AND_PLAY_DRAW_CARD, err)
+    )
+
+
 def send_pointed_not_say_uno(data):
     print('{} data_req:'.format(SocketConst.EMIT.POINTED_NOT_SAY_UNO), data)
     sio.emit(
@@ -242,7 +255,7 @@ def send_pointed_not_say_uno(data):
             SocketConst.EMIT.POINTED_NOT_SAY_UNO, err)
     )
 
-#WILD_DRAW_4が出された場合にチャレンジする
+
 def send_challenge(data):
     print('{} data_req:'.format(SocketConst.EMIT.CHALLENGE), data)
     sio.emit(
@@ -252,7 +265,7 @@ def send_challenge(data):
             SocketConst.EMIT.CHALLENGE, err)
     )
 
-#スペシャルロジックを発動する
+
 def send_special_logic(data):
     print('{} data_req:'.format(SocketConst.EMIT.SPECIAL_LOGIC), data)
     sio.emit(
@@ -268,14 +281,14 @@ def random_by_number(num):
     乱数取得
 
     Args:
-        num (int): 
+        num (int):
 
     Returns:
-        int: 
+        int:
     """
     return math.floor(random.random() * num)
 
-#カードを分類している　変更の可能性あり
+
 def get_card_play_valid(card_play_before, cards, must_call_draw_card):
     """
     card_play_beforeに基づき、プレイヤーの手札にある全てのカードを取得する関数です。
@@ -333,6 +346,38 @@ def get_card_play_valid(card_play_before, cards, must_call_draw_card):
 
     return cards_wild4, cards_wild, cards_wild_shuffle, cards_white_wild, cards_sabotage, cards_reverse, cards_number
 
+def remove_card_of_player(card_play, cards_of_player):
+    """
+    プレイヤーのカードを削除する機能。
+    例：プレイヤー1が赤9と黄8の2枚のカードを持っている。プレイヤー1が赤9をプレイ→プレイヤー1は黄8を残す。
+    """
+    is_remove = False
+    new_cards_of_player = []
+    for card_validate in cards_of_player:
+        if is_remove:
+            new_cards_of_player.append(card_validate)
+            continue
+        elif card_play.get('special'):
+            if card_play.get('color') == card_validate.get('color') and card_play.get('special') == card_validate.get('special'):
+                is_remove = True
+                continue
+            else:
+                new_cards_of_player.append(card_validate)
+                continue
+        else:
+            if (
+                card_play.get('color') == card_validate.get('color') and
+                card_play.get('number') is not None and card_validate.get('number') is not None and
+                int(card_play.get('number')) == int(
+                    card_validate.get('number'))
+            ):
+                is_remove = True
+                continue
+            else:
+                new_cards_of_player.append(card_validate)
+                continue
+    return new_cards_of_player
+
 
 def remove_card_of_player(card_play, cards_of_player):
     """
@@ -380,7 +425,7 @@ def execute_play_number(total, play_cards):
         #変更なし
     if total == 2:
         # call event say-uno-and-play-card
-        send_say_uno_and_draw_card(data)
+        send_say_uno_and_play_card(data)
     else:
         # call event play-card
         send_play_card(data)
@@ -408,7 +453,7 @@ def execute_play_sabotage(total, play_cards):
     #変更なし
     if total == 2:
         # call event say-uno-and-play-card
-        send_say_uno_and_draw_card(data)
+        send_say_uno_and_play_card(data)
     else:
         # call event play-card
         send_play_card(data)
@@ -422,7 +467,7 @@ def execute_play_reverse(total, play_cards):
     }
     if total == 2:
         # call event say-uno-and-play-card
-        send_say_uno_and_draw_card(data)
+        send_say_uno_and_play_card(data)
     else:
         # call event play-card
         send_play_card(data)
@@ -439,7 +484,7 @@ def execute_play_reverse_same_color(total, cards_reverse, card_play_before):
     }
     if total == 2:
         # call event say-uno-and-play-card
-        send_say_uno_and_draw_card(data)
+        send_say_uno_and_play_card(data)
     else:
         # call event play-card
         send_play_card(data)
@@ -452,7 +497,7 @@ def execute_play_wild(total, play_cards):
     }
     if total == 2:
         # call event say-uno-and-play-card
-        send_say_uno_and_draw_card(data)
+        send_say_uno_and_play_card(data)
     else:
         # call event play-card
         send_play_card(data)
@@ -464,7 +509,7 @@ def execute_play_white_wild(total, play_cards):
     }
     if total == 2:
         # call event say-uno-and-play-card
-        send_say_uno_and_draw_card(data)
+        send_say_uno_and_play_card(data)
     else:
         # call event play-card
         send_play_card(data)
@@ -479,7 +524,7 @@ def execute_play_color_change(total, play_cards, card_play_before):
     }
     if total == 2:
         # call event say-uno-and-play-card
-        send_say_uno_and_draw_card(data)
+        send_say_uno_and_play_card(data)
     else:
         # call event play-card
         send_play_card(data)
@@ -794,13 +839,16 @@ def on_connect():
                 send_draw_card(event_data)
                 return
             if event_name == SocketConst.EMIT.PLAY_DRAW_CARD:
-                send_draw_play_card(event_data)
+                send_play_draw_card(event_data)
                 return
             if event_name == SocketConst.EMIT.CHALLENGE:
                 send_challenge(event_data)
                 return
             if event_name == SocketConst.EMIT.SAY_UNO_AND_PLAY_CARD:
-                send_say_uno_and_draw_card(event_data)
+                send_say_uno_and_play_card(event_data)
+                return
+            if event_name == SocketConst.EMIT.SAY_UNO_AND_PLAY_DRAW_CARD:
+                send_say_uno_and_play_draw_card(event_data)
                 return
             if event_name == SocketConst.EMIT.POINTED_NOT_SAY_UNO:
                 send_pointed_not_say_uno(event_data)
@@ -816,19 +864,18 @@ def on_connect():
             send_join_room(data_join_room, join_room_callback)
             return
 
+
 @sio.on('disconnect')
 def on_disconnect():
     print('Client disconnect:')
     os._exit(0)
-#p=プレイヤーが任意に発生させるイベント
-#d=ディーラーが管理するイベント
 
-#ゲームへの参加（p）
+
 @sio.on(SocketConst.EMIT.JOIN_ROOM)
 def on_join_room(data_res):
     print('join room: data_res:', data_res)
 
-#カードを手札に追加（d）
+
 @sio.on(SocketConst.EMIT.RECEIVER_CARD)
 def on_receiver_card(data_res):
     global cards_global
@@ -839,13 +886,15 @@ def on_receiver_card(data_res):
         print('{} cards_global: '.format(
             SocketConst.EMIT.RECEIVER_CARD), cards_global)
 
-#対戦開始（d）
+
 @sio.on(SocketConst.EMIT.FIRST_PLAYER)
 def on_first_player(data_res):
     global color_check
     global left_id
     global right_id
     global is_wild_sabotage
+    global draw_id
+    draw_id=''
     # global turn_right
 
     # #first_cardがreverseの時左回り
@@ -865,6 +914,7 @@ def on_first_player(data_res):
     
     print('{} is first player.'.format(data_res.get('first_player')))
     print(data_res)
+
 
 #場札の色を変更（d）
 @sio.on(SocketConst.EMIT.COLOR_OF_WILD)
@@ -892,30 +942,40 @@ def on_color_of_wild(data_res):
     }
     send_color_of_wild(data)
 
-#手札のカードをシャッフル（d）
+
+@sio.on(SocketConst.EMIT.UPDATE_COLOR)
+def on_update_color(data_res):
+    print('update reveal card color is {}.'.format(data_res.get('color')))
+    print(data_res)
+
+
 @sio.on(SocketConst.EMIT.SHUFFLE_WILD)
 def on_suffle_wild(data_res):
-    global cards_global
+    global cards_global, uno_declared
     print('{} receive cards from shuffle wild.'.format(id))
     print(data_res)
     cards_global = data_res.get('cards_receive')
+    uno_declared = {}
+    for k, v in data_res.get('number_card_of_player').items():
+        if v == 1:
+            uno_declared[data_res.get('player')] = True
+            break
+        elif k in uno_declared:
+            del uno_declared[k]
     print('{} cards_global:'.format(
         SocketConst.EMIT.SHUFFLE_WILD), cards_global)
+
 
 #場札にカードを出す（p）
 @sio.on(SocketConst.EMIT.PLAY_CARD)
 def on_play_card(data_res):
     global cards_global
-    global play_color
-    # global turn_right
+    global current_card
 
     card_play = data_res.get('card_play')
+    #UPDATEイベントで追記する
+    current_card = data_res.get('card_play')
 
-    # if card_play.get('special')==Special.REVERSE:
-    #     turn_right=not turn_right
-    #drawreason以外にすればよいのでは wildで色チェンジして出せなかった場合の色をほぞんできていない
-    if card_play.get('color')!=Color.BLACK and card_play.get('color')!=Color.WHITE:
-        play_color=card_play.get('color')
     print(
         '{} play card {} {}.'.format(
             data_res.get('player'), card_play.get('color'), card_play.get('special') or card_play.get('number'))
@@ -930,25 +990,35 @@ def on_play_card(data_res):
 def on_draw_card(data_res):
     global draw_id
     global color_check
-    global play_color
+    global current_card
 
-    if data_res.get('draw_reason')==DrawReason.NOTHING:
+    if current_card.get('special')!=Special.DRAW_2 and current_card.get('special')!=Special.WILD_DRAW_4 and current_card.get('special')!=Special.WHITE_WILD:
         draw_id=data_res.get('player')
-        color_check[draw_id]=play_color
+        color_check[draw_id]=current_card.get('color')
     print('{} data_res:'.format(SocketConst.EMIT.DRAW_CARD), data_res)
     if data_res.get('player') == id:
         if data_res.get('can_play_draw_card'):
+            # if len(cards_global)==2:
+            #     data = {}
+            #     send_say_uno_and_play_draw_card(data)
+            # else:
+            #     print('{} data_req:'.format(SocketConst.EMIT.PLAY_DRAW_CARD), {
+            #         'is_play_card': True
+            #     })
+            #     data = {
+            #         'is_play_card': True
+            #     }
+            #     send_play_draw_card(data)
             print('{} data_req:'.format(SocketConst.EMIT.PLAY_DRAW_CARD), {
                 'is_play_card': True
             })
             data = {
                 'is_play_card': True
             }
-            send_draw_play_card(data)
+            send_play_draw_card(data)
         else:
             print('{} can not play draw card.'.format(data_res.get('player')))
 
-#山札から引いたカードを場札に出す（p）
 @sio.on(SocketConst.EMIT.PLAY_DRAW_CARD)
 def on_play_draw_card(data_res):
     global cards_global
@@ -958,7 +1028,7 @@ def on_play_draw_card(data_res):
         cards_global = remove_card_of_player(
             data_res.get('card_play'), cards_global)
 
-#チャレンジ（p）
+
 @sio.on(SocketConst.EMIT.CHALLENGE)
 def on_challenge(data_res):
     if data_res.get('is_challenge'):
@@ -970,13 +1040,13 @@ def on_challenge(data_res):
     else:
         print('{} no challenge.'.format(data_res.get('challenger')))
 
-#手札の公開（d）
+
 @sio.on(SocketConst.EMIT.PUBLIC_CARD)
 def on_public_card(data_res):
     print('Public card of player {}.'.format(data_res.get('card_of_player')))
     print(data_res.get('cards'))
 
-#UNOコールをし，カードを場札に出す（p）
+
 @sio.on(SocketConst.EMIT.SAY_UNO_AND_PLAY_CARD)
 def on_say_uno_and_play_card(data_res):
     global cards_global
@@ -992,15 +1062,31 @@ def on_say_uno_and_play_card(data_res):
         cards_global = remove_card_of_player(card_play, cards_global)
         print('cards_global after: ', cards_global)
 
-#UNOコールを忘れていることを指摘（p）
+
+@sio.on(SocketConst.EMIT.SAY_UNO_AND_PLAY_DRAW_CARD)
+def on_say_uno_and_play_draw_card(data_res):
+    global cards_global
+    card_play = data_res.get('card_play', {})
+    print(
+        '{} play draw card {} {} and say UNO.'.format(
+            data_res.get('player'), card_play.get('color'), card_play.get('special') or card_play.get('number'))
+    )
+
+    uno_declared[data_res.get('player')] = True
+
+    if data_res.get('player') == id:
+        cards_global = remove_card_of_player(card_play, cards_global)
+        print('cards_global after: ', cards_global)
+
+
 @sio.on(SocketConst.EMIT.POINTED_NOT_SAY_UNO)
 def on_pointed_not_say_uno(data_res):
     if str(data_res.get('have_say_uno')) == 'True':
-        print('{} have say UNO.'.format(data_res.get('player')))
+        print('{} have say UNO.'.format(data_res.get('target')))
     elif str(data_res.get('have_say_uno')) == 'False':
-        print('{} no say UNO.'.format(data_res.get('player')))
+        print('{} no say UNO.'.format(data_res.get('target')))
 
-#対戦終了の通知（d）
+
 @sio.on(SocketConst.EMIT.FINISH_TURN)
 def on_finish_turn(data_res):
     global cards_global
@@ -1011,12 +1097,22 @@ def on_finish_turn(data_res):
         print('Finish turn. No winner is this turn.')
     cards_global = []
 
-#ゲーム終了の通知（d）
-@sio.on(SocketConst.EMIT.FINISH_GAME)
+
+@sio.on(SocketConst.EMIT.FINISH_GAME,)
 def on_finish_game(data_res):
     print(data_res)
     print('Winner of game {}, turn win is {}.'.format(
         data_res.get('winner'), data_res.get('turn_win')))
+
+
+@sio.on(SocketConst.EMIT.PENALTY,)
+def on_finish_game(data_res):
+    print(data_res)
+    print('{} gets a penalty. Reason: {}'.format(
+        data_res.get('player'), data_res.get('error')))
+    if data_res.get('player') in uno_declared:
+        del uno_declared[data_res.get('player')]
+
 
 #次の順番のプレイヤーを通知
 @sio.on(SocketConst.EMIT.NEXT_PLAYER)
@@ -1106,18 +1202,6 @@ def on_next_player(data_res):
         send_draw_card({})
         return
 
-    if draw_id != '':
-        data = {
-            'title': 'ドローテスト',
-            }
-        send_special_logic(data)
-
-    if color_check.get(next_id) is not None:
-        data = {
-            'title': 'テスト',
-            }
-        send_special_logic(data)
-
     #邪魔
     if int(data_res.get('number_card_of_player').get(next_id))==1 and len(cards)>1:
         data = {
@@ -1125,20 +1209,20 @@ def on_next_player(data_res):
             }
         send_special_logic(data)
         draw_id=''
-        # if len(cards_white_wild)>0:
-        #     execute_play_white_wild(len(cards),cards_white_wild)
-        # elif len(cards_sabotage)>0:
-        #     execute_play_sabotage(len(cards), cards_sabotage)
-        if len(cards_wild)>0 and color_check.get(next_id) is not None:
+        if len(cards_white_wild)>0:
+            execute_play_white_wild(len(cards),cards_white_wild)
+        elif len(cards_sabotage)>0:
+            execute_play_sabotage(len(cards), cards_sabotage)
+        elif len(cards_wild)>0 and color_check.get(next_id) is not None:
             data = {
-            'title': 'お前'+ARR_COLOR_KANJI.get(color_check.get(next_id))+'持ってねえな！！',
+            'title': 'あなたにはあがらせません！'+ARR_COLOR_KANJI.get(color_check.get(next_id))+'持ってないですよね．',
             }
             send_special_logic(data)
             is_wild_sabotage=True
             execute_play_wild(len(cards), cards_wild)
         elif len([i for i in range(len(cards_number)) if cards_number[i].get('color')==color_check.get(next_id)])>0:
             data = {
-            'title': 'お前'+ARR_COLOR_KANJI.get(color_check.get(next_id))+'持ってねえな！！',
+            'title': 'あなたにはあがらせません！'+ARR_COLOR_KANJI.get(color_check.get(next_id))+'持ってないですよね．',
             }
             send_special_logic(data)
             execute_play_color_sabotage(len(cards), cards_number)
@@ -1153,12 +1237,12 @@ def on_next_player(data_res):
     #前の人がdraw_cardした時reverseを出す（邪魔）修正する必要
     elif data_res.get('before_player')==draw_id and len(cards)>1:
         data = {
-            'title': 'リバース邪魔モード',
+            'title': 'リバースモード',
             }
         send_special_logic(data)
         if len(cards_reverse)>0 and check_cards_reverse(cards_reverse,card_play_before):
             data = {
-            'title': 'お前'+ARR_COLOR_KANJI.get(color_check.get(draw_id))+'持ってねえな！！',
+            'title': ARR_COLOR_KANJI.get(color_check.get(draw_id))+'持ってないんですね．もう１枚どうぞ！！',
             }
             send_special_logic(data)
             execute_play_reverse_same_color(len(cards), cards_reverse, card_play_before)
@@ -1171,10 +1255,6 @@ def on_next_player(data_res):
             return
     #保守
     elif min_player<=2 and len(cards)-min_player>=3:
-        data = {
-            'title': '諦めモード',
-            }
-        send_special_logic(data)
         conservative(data_res,cards_wild4, cards_wild, cards_wild_shuffle, cards_white_wild, cards_sabotage, cards_reverse, cards_number)
     #攻め
     elif len(cards_wild4)>0 or len(cards_wild)>0 or len(cards_wild_shuffle)>0 or len(cards_white_wild)>0 or len(cards_sabotage)>0 or len(cards_reverse)>0 or len(cards_number)>0:
@@ -1182,6 +1262,7 @@ def on_next_player(data_res):
     else:
         send_draw_card({})
         return
+
 
 @sio.on('*')
 def catch_all(event, data):
