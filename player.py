@@ -945,6 +945,8 @@ def on_color_of_wild(data_res):
 
 @sio.on(SocketConst.EMIT.UPDATE_COLOR)
 def on_update_color(data_res):
+    global current_card
+    current_card['color'] = data_res.get('color')
     print('update reveal card color is {}.'.format(data_res.get('color')))
     print(data_res)
 
@@ -998,24 +1000,17 @@ def on_draw_card(data_res):
     print('{} data_res:'.format(SocketConst.EMIT.DRAW_CARD), data_res)
     if data_res.get('player') == id:
         if data_res.get('can_play_draw_card'):
-            # if len(cards_global)==2:
-            #     data = {}
-            #     send_say_uno_and_play_draw_card(data)
-            # else:
-            #     print('{} data_req:'.format(SocketConst.EMIT.PLAY_DRAW_CARD), {
-            #         'is_play_card': True
-            #     })
-            #     data = {
-            #         'is_play_card': True
-            #     }
-            #     send_play_draw_card(data)
-            print('{} data_req:'.format(SocketConst.EMIT.PLAY_DRAW_CARD), {
-                'is_play_card': True
-            })
-            data = {
-                'is_play_card': True
-            }
-            send_play_draw_card(data)
+            if len(cards_global)==2:
+                data = {}
+                send_say_uno_and_play_draw_card(data)
+            else:
+                print('{} data_req:'.format(SocketConst.EMIT.PLAY_DRAW_CARD), {
+                    'is_play_card': True
+                })
+                data = {
+                    'is_play_card': True
+                }
+                send_play_draw_card(data)
         else:
             print('{} can not play draw card.'.format(data_res.get('player')))
 
@@ -1220,6 +1215,7 @@ def on_next_player(data_res):
             send_special_logic(data)
             is_wild_sabotage=True
             execute_play_wild(len(cards), cards_wild)
+        #色チェンジするときだけにしていいかも
         elif len([i for i in range(len(cards_number)) if cards_number[i].get('color')==color_check.get(next_id)])>0:
             data = {
             'title': 'あなたにはあがらせません！'+ARR_COLOR_KANJI.get(color_check.get(next_id))+'持ってないですよね．',
